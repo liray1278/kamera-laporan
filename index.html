@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#24302b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Kamera Laporan Proyek</title>
+<style>
+  :root{--bg:#f3f4f1;--card:#fff;--ink:#1d2321;--muted:#68716d;--line:#dfe3df;--accent:#d9771f;--ok:#2f7d4f;--bad:#b23a3a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4}
+  header{background:#24302b;color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:18px} header p{margin:2px 0 0;font-size:12px;color:#c7d0cb}
+  main{padding:12px;max-width:640px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  .card h2{margin:0 0 10px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  label:first-of-type{margin-top:0}
+  input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:16px;background:#fbfcfb;color:var(--ink);font-family:inherit}
+  textarea{resize:vertical;min-height:52px}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:var(--ink)}
+  .chk input{width:20px;height:20px}
+  .gps{font-size:12px;margin-top:6px;color:var(--muted)}
+  .gps.ok{color:var(--ok)} .gps.bad{color:var(--bad)}
+  .shoot{display:block;text-align:center;padding:18px;border-radius:12px;background:var(--accent);color:#fff;font-weight:700;font-size:17px;cursor:pointer}
+  .shoot small{display:block;font-weight:400;font-size:12px;opacity:.9}
+  #file{display:none}
+  #out{width:100%;border-radius:8px;display:none;margin-top:4px}
+  .row{display:flex;gap:8px;margin-top:10px}
+  button{font:inherit;cursor:pointer}
+  .btn{flex:1;padding:12px;border:0;border-radius:10px;background:#e8ebe8;color:var(--ink);font-weight:600}
+  .btn.main{background:#24302b;color:#fff}
+  .note{font-size:12px;color:var(--muted);margin:8px 0 0}
+  .busy{text-align:center;color:var(--muted);font-size:14px;padding:16px;display:none}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#24302b;color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header><h1>Kamera Laporan Proyek</h1><p>Foto progres dengan cap tanggal, jam, lokasi & keterangan</p></header>
+<main>
+  <section class="card">
+    <h2>Keterangan foto</h2>
+    <label>Nama proyek</label><input id="proyek" placeholder="mis. Rumah Bpk. Andi – Bekasi">
+    <label>Item pekerjaan</label>
+    <input id="item" list="items" placeholder="mis. Pengecoran sloof">
+    <datalist id="items">
+      <option>Galian tanah pondasi</option><option>Pasangan pondasi batu kali</option><option>Pembesian sloof</option>
+      <option>Pengecoran sloof</option><option>Pengecoran kolom</option><option>Pasangan dinding bata</option>
+      <option>Plesteran & acian</option><option>Ring balok</option><option>Rangka atap</option>
+      <option>Pemasangan keramik</option><option>Pengecatan</option><option>Material datang</option>
+    </datalist>
+    <label>Progres (%)</label><input id="progres" inputmode="numeric" placeholder="opsional, mis. 60">
+    <label>Catatan</label><textarea id="catatan" placeholder="opsional"></textarea>
+    <label class="chk"><input type="checkbox" id="useGps" checked> Sertakan lokasi GPS</label>
+    <div class="gps" id="gpsInfo">Lokasi belum diambil.</div>
+  </section>
+
+  <section class="card">
+    <label class="shoot" for="file">📷 Ambil foto<small>atau pilih dari galeri</small></label>
+    <input type="file" id="file" accept="image/*" capture="environment">
+    <div class="busy" id="busy">Memproses foto…</div>
+    <img id="out" alt="Hasil foto">
+    <div class="row" id="actions" style="display:none">
+      <button class="btn main" id="shareBtn">Bagikan</button>
+      <button class="btn" id="saveBtn">Simpan</button>
+    </div>
+    <p class="note" id="saveNote" style="display:none">Foto tersimpan di folder Download. Pakai Bagikan untuk langsung kirim ke WhatsApp.</p>
+  </section>
+
+  <section class="card">
+    <h2>Laporan PDF</h2>
+    <p class="note" style="margin:0 0 8px">Setiap foto yang diambil otomatis masuk ke sini. Ketuk foto untuk menghapusnya dari laporan.</p>
+    <div id="thumbs" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px"></div>
+    <div class="row">
+      <button class="btn main" id="pdfBtn">📄 Buat PDF (0 foto)</button>
+      <button class="btn" id="clrBtn">Kosongkan</button>
+    </div>
+  </section>
+</main>
+<canvas id="cv" style="display:none"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== MiniPDF: pembuat PDF tanpa internet & tanpa fitur print ===== */
+const MiniPDF=(()=>{
+  const W=[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+  const MAP={'✓':'v','✗':'x','≈':'~','→':'->','≤':'<=','≥':'>=','—':'\x97','–':'\x96','…':'\x85','‘':'\x91','’':'\x92','“':'\x93','”':'\x94','•':'\x95','€':'\x80','↶':''};
+  function enc(s){let o='';for(const ch of String(s)){if(MAP[ch]!=null){o+=MAP[ch];continue}const c=ch.codePointAt(0);if(c===0xFE0F)continue;o+=c<256?ch:(c>0xFFFF?'':'?')}return o}
+  function width(s,size,bold){let w=0;for(const ch of enc(s)){const c=ch.charCodeAt(0);let cw=(c>=32&&c<=126)?W[c-32]:556;if(bold&&!(c>=48&&c<=57))cw*=1.06;w+=cw}return w*size/1000}
+  const hex=s=>Array.from(enc(s)).map(c=>c.charCodeAt(0).toString(16).padStart(2,'0')).join('');
+  const rgb=h=>{h=(h||'#000000').replace('#','');return [0,2,4].map(i=>(parseInt(h.substr(i,2),16)/255).toFixed(3)).join(' ')};
+  const f=n=>(+n).toFixed(2);
+  const bytes=s=>{const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i)&255;return u};
+
+  class Doc{
+    constructor(){this.pw=595.28;this.ph=841.89;this.m=40;this.pages=[];this.imgs=[];this.footer='';this.newPage()}
+    get cw(){return this.pw-this.m*2}
+    newPage(){this.c=[];this.pages.push(this.c);this.y=this.m}
+    ensure(h){if(this.y+h>this.ph-this.m-14){this.newPage();return true}return false}
+    text(s,x,y,o={}){const size=o.size||10;let tx=x;const w=width(s,size,o.bold);
+      if(o.align==='right')tx=x-w;else if(o.align==='center')tx=x-w/2;
+      this.c.push(`BT /${o.bold?'F2':'F1'} ${size} Tf ${rgb(o.color)} rg ${f(tx)} ${f(this.ph-y-size*0.8)} Td <${hex(s)}> Tj ET`)}
+    rect(x,y,w,h,fill){this.c.push(`${rgb(fill)} rg ${f(x)} ${f(this.ph-y-h)} ${f(w)} ${f(h)} re f`)}
+    line(x1,y1,x2,y2,color,lw){this.c.push(`${rgb(color||'#cccccc')} RG ${lw||0.6} w ${f(x1)} ${f(this.ph-y1)} m ${f(x2)} ${f(this.ph-y2)} l S`)}
+    image(dataUrl,iw,ih,x,y,w,h){const b=atob(dataUrl.split(',')[1]);const i=this.imgs.push({b:bytes(b),iw,ih})-1;
+      this.c.push(`q ${f(w)} 0 0 ${f(h)} ${f(x)} ${f(this.ph-y-h)} cm /Im${i} Do Q`)}
+    wrap(s,maxW,size,bold){const out=[];String(s).split('\n').forEach(par=>{let cur='';par.split(' ').forEach(w=>{const t=cur?cur+' '+w:w;if(width(t,size,bold)>maxW&&cur){out.push(cur);cur=w}else cur=t});out.push(cur)});return out}
+    para(s,o={}){const size=o.size||10,lh=size*1.4,x=this.m+(o.indent||0);
+      this.wrap(s,this.cw-(o.indent||0),size,o.bold).forEach(l=>{this.ensure(lh);this.text(l,x,this.y,{size,bold:o.bold,color:o.color});this.y+=lh});
+      this.y+=o.gap!=null?o.gap:2}
+    title(t,sub){this.rect(0,0,this.pw,6,'#d9771f');this.y=this.m;
+      this.text(t,this.m,this.y,{size:18,bold:true,color:'#1d2321'});this.y+=26;
+      if(sub){this.para(sub,{size:10,color:'#68716d',gap:6})}
+      this.line(this.m,this.y,this.pw-this.m,this.y,'#1d2321',1);this.y+=12}
+    heading(t){this.ensure(40);this.y+=6;this.text(t,this.m,this.y,{size:12,bold:true,color:'#24302b'});this.y+=18}
+    table(cols,rows,o={}){const size=o.size||9,pad=4,lh=size*1.35;
+      const ws=cols.map(c=>c.w*this.cw);
+      const head=()=>{const h=lh+pad*2;this.ensure(h+lh);this.rect(this.m,this.y,this.cw,h,'#24302b');let x=this.m;
+        cols.forEach((c,i)=>{const tx=c.align==='right'?x+ws[i]-pad:c.align==='center'?x+ws[i]/2:x+pad;this.text(c.t,tx,this.y+pad,{size,bold:true,color:'#ffffff',align:c.align});x+=ws[i]});this.y+=h};
+      head();
+      rows.forEach((r0,ri)=>{const r=Array.isArray(r0)?{cells:r0}:r0;const cells=r.cells;const lines=cells.map((v,i)=>this.wrap(v==null?'':String(v),ws[i]-pad*2,size,r.bold));
+        const h=Math.max(...lines.map(l=>l.length))*lh+pad*2;
+        if(this.ensure(h))head();
+        if(r.fill)this.rect(this.m,this.y,this.cw,h,r.fill);else if(ri%2)this.rect(this.m,this.y,this.cw,h,'#f4f5f3');
+        let x=this.m;cols.forEach((c,i)=>{lines[i].forEach((l,li)=>{const tx=c.align==='right'?x+ws[i]-pad:c.align==='center'?x+ws[i]/2:x+pad;
+          this.text(l,tx,this.y+pad+li*lh,{size,bold:r.bold,color:(r.colors&&r.colors[i])||'#1d2321',align:c.align})});x+=ws[i]});
+        this.y+=h;this.line(this.m,this.y,this.pw-this.m,this.y,'#dfe3df',0.5)});
+      this.y+=8}
+    total(label,value){this.ensure(30);this.line(this.m,this.y,this.pw-this.m,this.y,'#1d2321',1.2);this.y+=8;
+      this.text(label,this.m,this.y,{size:12,bold:true});this.text(value,this.pw-this.m,this.y,{size:14,bold:true,align:'right'});this.y+=26}
+    output(){
+      const parts=[],offs=[];let len=0;const push=p=>{const u=typeof p==='string'?bytes(p):p;parts.push(u);len+=u.length};
+      const n=this.pages.length,ni=this.imgs.length,first=5,pg0=first+ni;
+      const total=4+ni+n*2;const obj=(id,body)=>{offs[id]=len;push(`${id} 0 obj\n`);(Array.isArray(body)?body:[body]).forEach(push);push('\nendobj\n')};
+      push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+      obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+      obj(2,`<< /Type /Pages /Kids [${this.pages.map((_,i)=>`${pg0+i*2} 0 R`).join(' ')}] /Count ${n} >>`);
+      obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+      obj(4,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+      this.imgs.forEach((im,i)=>obj(first+i,[`<< /Type /XObject /Subtype /Image /Width ${im.iw} /Height ${im.ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.b.length} >>\nstream\n`,im.b,'\nendstream']));
+      const xo=this.imgs.map((_,i)=>`/Im${i} ${first+i} 0 R`).join(' ');
+      this.pages.forEach((c,i)=>{
+        const foot=`BT /F1 8 Tf 0.45 0.45 0.45 rg ${f(this.m)} 22 Td <${hex(this.footer)}> Tj ET BT /F1 8 Tf 0.45 0.45 0.45 rg ${f(this.pw-this.m-width('Hal. '+(i+1)+' / '+n,8))} 22 Td <${hex('Hal. '+(i+1)+' / '+n)}> Tj ET`;
+        const s=c.join('\n')+'\n'+foot;
+        obj(pg0+i*2,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f(this.pw)} ${f(this.ph)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${ni?` /XObject << ${xo} >>`:''} >> /Contents ${pg0+i*2+1} 0 R >>`);
+        obj(pg0+i*2+1,`<< /Length ${s.length} >>\nstream\n${s}\nendstream`);
+      });
+      const xref=len;let x=`xref\n0 ${total+1}\n0000000000 65535 f \n`;
+      for(let i=1;i<=total;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+      push(x+`trailer\n<< /Size ${total+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+      const out=new Uint8Array(len);let p=0;parts.forEach(u=>{out.set(u,p);p+=u.length});return out}
+  }
+  async function save(doc,name,notify){
+    const blob=new Blob([doc.output()],{type:'application/pdf'});
+    try{const file=new File([blob],name,{type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}}catch(e){if(e&&e.name==='AbortError')return}
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    if(notify)notify('PDF dibuat: '+name);
+  }
+  const stamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`};
+  const today=()=>{const d=new Date();const B=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];const p=n=>String(n).padStart(2,'0');return `${d.getDate()} ${B[d.getMonth()]} ${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`};
+  return {Doc,save,width,stamp,today};
+})();
+</script>
+<script>
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const $=id=>document.getElementById(id);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
+const HARI=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const BULAN=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
+/* simpan isian terakhir */
+const F=['proyek','item','progres','catatan'];
+const saved=store.get('kam_fields',{});
+F.forEach(id=>{$(id).value=saved[id]||'';$(id).addEventListener('input',()=>{saved[id]=$(id).value;store.set('kam_fields',saved)})});
+$('useGps').checked=saved.gps!==false;
+$('useGps').onchange=()=>{saved.gps=$('useGps').checked;store.set('kam_fields',saved);if($('useGps').checked)getGps()};
+
+/* ---------- GPS ---------- */
+let fix=null;
+function getGps(){
+  const info=$('gpsInfo');
+  if(!navigator.geolocation){info.textContent='GPS tidak didukung di perangkat ini.';info.className='gps bad';return Promise.resolve(null)}
+  info.textContent='Mencari lokasi…';info.className='gps';
+  return new Promise(res=>{
+    navigator.geolocation.getCurrentPosition(p=>{
+      fix={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy,t:Date.now()};
+      info.textContent=`📍 ${fix.lat.toFixed(6)}, ${fix.lon.toFixed(6)} (±${Math.round(fix.acc)} m)`;info.className='gps ok';res(fix);
+    },err=>{
+      info.textContent=err.code===1?'Izin lokasi ditolak. Aktifkan izin lokasi untuk aplikasi ini.':'Lokasi belum didapat. Coba di tempat terbuka.';
+      info.className='gps bad';res(null);
+    },{enableHighAccuracy:true,timeout:12000,maximumAge:60000});
+  });
+}
+if($('useGps').checked)getGps();
+
+/* ---------- Waktu ---------- */
+function zona(d){const o=-d.getTimezoneOffset()/60;return o===7?'WIB':o===8?'WITA':o===9?'WIT':'GMT'+(o>=0?'+':'')+o}
+function waktu(d){const p=n=>String(n).padStart(2,'0');
+  return `${HARI[d.getDay()]}, ${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()} · ${p(d.getHours())}:${p(d.getMinutes())} ${zona(d)}`}
+
+/* ---------- Proses foto ---------- */
+function wrap(ctx,text,maxW){
+  const words=text.split(' '),lines=[];let cur='';
+  words.forEach(w=>{const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t});
+  if(cur)lines.push(cur);return lines;
+}
+let lastBlob=null,lastName='';
+$('file').onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  $('busy').style.display='block';$('out').style.display='none';$('actions').style.display='none';
+  const now=new Date();
+  if($('useGps').checked&&(!fix||Date.now()-fix.t>120000))await getGps();
+  const img=new Image();
+  img.onload=()=>{
+    const max=1920,sc=Math.min(1,max/Math.max(img.width,img.height));
+    const W=Math.round(img.width*sc),H=Math.round(img.height*sc);
+    const cv=$('cv'),ctx=cv.getContext('2d');cv.width=W;cv.height=H;
+    ctx.drawImage(img,0,0,W,H);
+    const fs=Math.round(Math.max(16,Math.min(W,H)*0.032)),pad=Math.round(fs*0.8),maxW=W-pad*2;
+    const lines=[];
+    const proyek=$('proyek').value.trim(),item=$('item').value.trim(),prog=$('progres').value.trim(),cat=$('catatan').value.trim();
+    if(proyek)lines.push({t:proyek,b:true,s:1.15});
+    if(item||prog)lines.push({t:[item,prog?`Progres ${prog.replace('%','')}%`:''].filter(Boolean).join(' · '),b:true,s:1});
+    lines.push({t:waktu(now),s:0.9});
+    if($('useGps').checked&&fix)lines.push({t:`📍 ${fix.lat.toFixed(6)}, ${fix.lon.toFixed(6)} (±${Math.round(fix.acc)} m)`,s:0.9});
+    if(cat)lines.push({t:cat,s:0.9});
+    const rendered=[];
+    lines.forEach(l=>{ctx.font=`${l.b?'700':'400'} ${Math.round(fs*l.s)}px system-ui,sans-serif`;
+      wrap(ctx,l.t,maxW).forEach(x=>rendered.push(Object.assign({},l,{t:x})))});
+    const lh=fs*1.35,boxH=rendered.length*lh+pad*1.4;
+    const g=ctx.createLinearGradient(0,H-boxH-fs,0,H);
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(0.25,'rgba(0,0,0,.55)');g.addColorStop(1,'rgba(0,0,0,.7)');
+    ctx.fillStyle=g;ctx.fillRect(0,H-boxH-fs,W,boxH+fs);
+    ctx.fillStyle='#d9771f';ctx.fillRect(pad,H-boxH+pad*0.2,Math.round(fs*0.25),rendered.length*lh-fs*0.2);
+    ctx.textBaseline='top';ctx.shadowColor='rgba(0,0,0,.6)';ctx.shadowBlur=4;
+    rendered.forEach((l,i)=>{ctx.font=`${l.b?'700':'400'} ${Math.round(fs*l.s)}px system-ui,sans-serif`;ctx.fillStyle='#fff';
+      ctx.fillText(l.t,pad+fs*0.6,H-boxH+pad*0.4+i*lh)});
+    ctx.shadowBlur=0;
+    const p=n=>String(n).padStart(2,'0');
+    lastName=`laporan_${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}_${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}.jpg`;
+    // salinan lebih kecil untuk PDF
+    const ps=Math.min(1,1400/Math.max(W,H)),pc=document.createElement('canvas');
+    pc.width=Math.round(W*ps);pc.height=Math.round(H*ps);pc.getContext('2d').drawImage(cv,0,0,pc.width,pc.height);
+    report.push({url:pc.toDataURL('image/jpeg',0.82),w:pc.width,h:pc.height,item:item,t:waktu(now)});
+    renderThumbs();
+    cv.toBlob(b=>{
+      lastBlob=b;
+      $('out').src=URL.createObjectURL(b);
+      $('out').style.display='block';$('actions').style.display='flex';$('saveNote').style.display='block';$('busy').style.display='none';
+      URL.revokeObjectURL(img.src);
+    },'image/jpeg',0.9);
+  };
+  img.onerror=()=>{$('busy').style.display='none';toast('Foto tidak bisa dibuka')};
+  img.src=URL.createObjectURL(file);
+  e.target.value='';
+};
+
+/* ---------- Laporan PDF (banyak foto) ---------- */
+const report=[];
+function renderThumbs(){
+  $('thumbs').innerHTML=report.map((r,i)=>`<img src="${r.url}" data-i="${i}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;cursor:pointer">`).join('')||'<span class="note" style="grid-column:1/-1">Belum ada foto.</span>';
+  $('thumbs').querySelectorAll('img').forEach(im=>im.onclick=()=>{if(confirm('Hapus foto ini dari laporan?')){report.splice(+im.dataset.i,1);renderThumbs()}});
+  $('pdfBtn').textContent=`📄 Buat PDF (${report.length} foto)`;
+}
+renderThumbs();
+$('clrBtn').onclick=()=>{if(report.length&&confirm('Kosongkan semua foto di laporan?')){report.length=0;renderThumbs()}};
+$('pdfBtn').onclick=()=>{
+  if(!report.length){toast('Ambil foto dulu');return}
+  const doc=new MiniPDF.Doc(),pr=$('proyek').value.trim();
+  doc.footer='Laporan foto proyek · dibuat '+MiniPDF.today();
+  doc.title('Laporan Foto Progres',(pr?pr+' · ':'')+report.length+' foto · '+MiniPDF.today());
+  report.forEach((r,i)=>{
+    const maxW=doc.cw,maxH=(doc.ph-doc.m*2-120)/2;
+    const sc=Math.min(maxW/r.w,maxH/r.h),dw=r.w*sc,dh=r.h*sc;
+    doc.ensure(dh+30);
+    doc.text(`Foto ${i+1}${r.item?' – '+r.item:''}`,doc.m,doc.y,{size:10,bold:true});doc.y+=14;
+    doc.image(r.url,r.w,r.h,doc.m+(maxW-dw)/2,doc.y,dw,dh);doc.y+=dh+16;
+  });
+  MiniPDF.save(doc,'Laporan_Foto_'+MiniPDF.stamp()+'.pdf',toast);
+};
+
+$('saveBtn').onclick=()=>{
+  if(!lastBlob)return;
+  const a=document.createElement('a');a.href=URL.createObjectURL(lastBlob);a.download=lastName;
+  document.body.appendChild(a);a.click();a.remove();toast('Menyimpan foto…');
+};
+$('shareBtn').onclick=async()=>{
+  if(!lastBlob)return;
+  const f=new File([lastBlob],lastName,{type:'image/jpeg'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){
+    try{await navigator.share({files:[f],title:$('proyek').value||'Laporan proyek'})}catch(e){}
+  }else toast('Bagikan tidak didukung di sini. Pakai Simpan.');
+};
+</script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+</script>
+</body>
+</html>
